@@ -1,7 +1,8 @@
 AWSTemplateFormatVersion: '2010-09-09'
 Description: >
   AWS CloudFormation template to deploy a Next.js frontend, a Flask backend,
-  and a PostgreSQL database on AWS using ECS Fargate, RDS, and other services.
+  and a PostgreSQL database on AWS using ECS Fargate, RDS, and other services,
+  including CI/CD pipelines with minimal manual steps.
 
 Parameters:
   EnvironmentName:
@@ -51,25 +52,6 @@ Parameters:
     AllowedPattern: '[a-zA-Z0-9]*'
     ConstraintDescription: "Must contain only alphanumeric characters."
 
-  DBAllocatedStorage:
-    Type: Number
-    Default: 20
-    Description: "The size of the database (Gb)"
-
-  DBInstanceClass:
-    Type: String
-    Default: db.t3.micro
-    AllowedValues:
-      - db.t3.micro
-      - db.t3.small
-      - db.t3.medium
-    Description: "Database instance class"
-
-  GitHubOAuthToken:
-    Type: String
-    Description: "GitHub OAuth Token for accessing private repositories"
-    NoEcho: true
-
   GitHubRepositoryOwner:
     Type: String
     Description: "GitHub username or organization owning the repositories"
@@ -83,6 +65,15 @@ Parameters:
     Description: "Name of the GitHub repository for the backend"
 
 Resources:
+
+  # S3 Bucket for CodePipeline Artifact Store
+  CodePipelineArtifactStoreBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub "${AWS::AccountId}-${AWS::Region}-${EnvironmentName}-codepipeline-artifacts"
+      AccessControl: Private
+      VersioningConfiguration:
+        Status: Enabled
 
   # VPC and Networking Resources
   VPC:
@@ -290,13 +281,13 @@ Resources:
   BackendServiceSecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
-      GroupDescription: "Allow traffic from ALB to backend service"
+      GroupDescription: "Allow traffic from frontend service to backend service"
       VpcId: !Ref VPC
       SecurityGroupIngress:
         - IpProtocol: tcp
           FromPort: 5000
           ToPort: 5000
-          SourceSecurityGroupId: !Ref LoadBalancerSecurityGroup
+          SourceSecurityGroupId: !Ref FrontendServiceSecurityGroup
       Tags:
         - Key: Name
           Value: !Sub "${EnvironmentName}-backend-sg"
@@ -351,6 +342,17 @@ Resources:
         - arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryPowerUser
         - arn:aws:iam::aws:policy/CloudWatchLogsFullAccess
         - arn:aws:iam::aws:policy/AWSCodeBuildAdminAccess
+      Policies:
+        - PolicyName: CodeBuildExtraPermissions
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - ecs:RegisterTaskDefinition
+                  - ecs:UpdateService
+                  - ecs:DeregisterTaskDefinition
+                Resource: "*"
 
   CodePipelineServiceRole:
     Type: AWS::IAM::Role
@@ -543,8 +545,8 @@ Resources:
     Type: AWS::RDS::DBInstance
     Properties:
       DBName: !Sub "${EnvironmentName}db"
-      AllocatedStorage: !Ref DBAllocatedStorage
-      DBInstanceClass: !Ref DBInstanceClass
+      AllocatedStorage: 20
+      DBInstanceClass: db.t3.micro
       Engine: postgres
       MasterUsername: !Ref DBUsername
       MasterUserPassword: !Ref DBPassword
@@ -581,6 +583,13 @@ Resources:
       LogGroupName: !Sub "/ecs/${EnvironmentName}-backend"
       RetentionInDays: 7
 
+  # AWS CodeStar Connections
+  GitHubConnection:
+    Type: AWS::CodeStarConnections::Connection
+    Properties:
+      ConnectionName: !Sub "${EnvironmentName}-github-connection"
+      ProviderType: GitHub
+
   # CodeBuild Projects
   FrontendCodeBuildProject:
     Type: AWS::CodeBuild::Project
@@ -588,7 +597,7 @@ Resources:
       Name: !Sub "${EnvironmentName}-frontend-build"
       ServiceRole: !GetAtt CodeBuildServiceRole.Arn
       Artifacts:
-        Type: NO_ARTIFACTS
+        Type: CODEPIPELINE
       Environment:
         Type: LINUX_CONTAINER
         ComputeType: BUILD_GENERAL1_SMALL
@@ -602,12 +611,7 @@ Resources:
           - Name: ENVIRONMENT_NAME
             Value: !Ref EnvironmentName
       Source:
-        Type: GITHUB
-        Location: !Sub "https://github.com/${GitHubRepositoryOwner}/${FrontendGitHubRepoName}.git"
-        GitCloneDepth: 1
-        BuildSpec: 'frontend-buildspec.yml'
-        Auth:
-          Type: OAUTH
+        Type: CODEPIPELINE
       Cache:
         Type: NO_CACHE
 
@@ -617,7 +621,7 @@ Resources:
       Name: !Sub "${EnvironmentName}-backend-build"
       ServiceRole: !GetAtt CodeBuildServiceRole.Arn
       Artifacts:
-        Type: NO_ARTIFACTS
+        Type: CODEPIPELINE
       Environment:
         Type: LINUX_CONTAINER
         ComputeType: BUILD_GENERAL1_SMALL
@@ -631,12 +635,7 @@ Resources:
           - Name: ENVIRONMENT_NAME
             Value: !Ref EnvironmentName
       Source:
-        Type: GITHUB
-        Location: !Sub "https://github.com/${GitHubRepositoryOwner}/${BackendGitHubRepoName}.git"
-        GitCloneDepth: 1
-        BuildSpec: 'backend-buildspec.yml'
-        Auth:
-          Type: OAUTH
+        Type: CODEPIPELINE
       Cache:
         Type: NO_CACHE
 
@@ -648,23 +647,24 @@ Resources:
       RoleArn: !GetAtt CodePipelineServiceRole.Arn
       ArtifactStore:
         Type: S3
-        Location: !Sub "${AWS::AccountId}-${AWS::Region}-codepipeline"
+        Location: !Ref CodePipelineArtifactStoreBucket
       Stages:
         - Name: Source
           Actions:
             - Name: SourceAction
               ActionTypeId:
                 Category: Source
-                Owner: ThirdParty
-                Provider: GitHub
+                Owner: AWS
+                Provider: CodeStarSourceConnection
                 Version: '1'
               OutputArtifacts:
                 - Name: SourceOutput
               Configuration:
-                Owner: !Ref GitHubRepositoryOwner
-                Repo: !Ref FrontendGitHubRepoName
-                Branch: master
-                OAuthToken: !Ref GitHubOAuthToken
+                ConnectionArn: !Ref GitHubConnection
+                FullRepositoryId: !Sub "${GitHubRepositoryOwner}/${FrontendGitHubRepoName}"
+                BranchName: master
+                DetectChanges: true
+              RunOrder: 1
         - Name: Build
           Actions:
             - Name: BuildAction
@@ -679,6 +679,7 @@ Resources:
                 ProjectName: !Ref FrontendCodeBuildProject
               OutputArtifacts:
                 - Name: BuildOutput
+              RunOrder: 1
         - Name: Deploy
           Actions:
             - Name: DeployAction
@@ -693,6 +694,7 @@ Resources:
                 ClusterName: !Ref ECSCluster
                 ServiceName: !Ref FrontendService
                 FileName: imagedefinitions.json
+              RunOrder: 1
 
   BackendCodePipeline:
     Type: AWS::CodePipeline::Pipeline
@@ -701,23 +703,24 @@ Resources:
       RoleArn: !GetAtt CodePipelineServiceRole.Arn
       ArtifactStore:
         Type: S3
-        Location: !Sub "${AWS::AccountId}-${AWS::Region}-codepipeline"
+        Location: !Ref CodePipelineArtifactStoreBucket
       Stages:
         - Name: Source
           Actions:
             - Name: SourceAction
               ActionTypeId:
                 Category: Source
-                Owner: ThirdParty
-                Provider: GitHub
+                Owner: AWS
+                Provider: CodeStarSourceConnection
                 Version: '1'
               OutputArtifacts:
                 - Name: SourceOutput
               Configuration:
-                Owner: !Ref GitHubRepositoryOwner
-                Repo: !Ref BackendGitHubRepoName
-                Branch: master
-                OAuthToken: !Ref GitHubOAuthToken
+                ConnectionArn: !Ref GitHubConnection
+                FullRepositoryId: !Sub "${GitHubRepositoryOwner}/${BackendGitHubRepoName}"
+                BranchName: master
+                DetectChanges: true
+              RunOrder: 1
         - Name: Build
           Actions:
             - Name: BuildAction
@@ -732,6 +735,7 @@ Resources:
                 ProjectName: !Ref BackendCodeBuildProject
               OutputArtifacts:
                 - Name: BuildOutput
+              RunOrder: 1
         - Name: Deploy
           Actions:
             - Name: DeployAction
@@ -746,6 +750,7 @@ Resources:
                 ClusterName: !Ref ECSCluster
                 ServiceName: !Ref BackendService
                 FileName: imagedefinitions.json
+              RunOrder: 1
 
 Outputs:
   LoadBalancerDNSName:
