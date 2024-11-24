@@ -12,8 +12,8 @@ for i in range(10):
         conn = psycopg2.connect(
             host="postgres",
             database="your_database",
-            user="your_user",
-            password="your_password"
+            user="your_user1",
+            password="your_password1"
         )
         cursor = conn.cursor()
         break
