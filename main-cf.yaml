@@ -54,15 +54,11 @@ Parameters:
 
   GitHubRepositoryOwner:
     Type: String
-    Description: "GitHub username or organization owning the repositories"
+    Description: "GitHub username or organization owning the repository"
 
-  FrontendGitHubRepoName:
+  GitHubRepositoryName:
     Type: String
-    Description: "Name of the GitHub repository for the frontend"
-
-  BackendGitHubRepoName:
-    Type: String
-    Description: "Name of the GitHub repository for the backend"
+    Description: "Name of the GitHub repository containing both frontend and backend"
 
 Resources:
 
@@ -253,7 +249,7 @@ Resources:
   LoadBalancerSecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
-      GroupDescription: "Allow HTTP and HTTPS traffic to ALB"
+      GroupDescription: "Allow HTTP traffic to ALB"
       VpcId: !Ref VPC
       SecurityGroupIngress:
         - IpProtocol: tcp
@@ -590,11 +586,11 @@ Resources:
       ConnectionName: !Sub "${EnvironmentName}-github-connection"
       ProviderType: GitHub
 
-  # CodeBuild Projects
-  FrontendCodeBuildProject:
+  # CodeBuild Project
+  CodeBuildProject:
     Type: AWS::CodeBuild::Project
     Properties:
-      Name: !Sub "${EnvironmentName}-frontend-build"
+      Name: !Sub "${EnvironmentName}-build-project"
       ServiceRole: !GetAtt CodeBuildServiceRole.Arn
       Artifacts:
         Type: CODEPIPELINE
@@ -615,35 +611,11 @@ Resources:
       Cache:
         Type: NO_CACHE
 
-  BackendCodeBuildProject:
-    Type: AWS::CodeBuild::Project
-    Properties:
-      Name: !Sub "${EnvironmentName}-backend-build"
-      ServiceRole: !GetAtt CodeBuildServiceRole.Arn
-      Artifacts:
-        Type: CODEPIPELINE
-      Environment:
-        Type: LINUX_CONTAINER
-        ComputeType: BUILD_GENERAL1_SMALL
-        Image: aws/codebuild/standard:5.0
-        PrivilegedMode: true  # Required for Docker build
-        EnvironmentVariables:
-          - Name: AWS_ACCOUNT_ID
-            Value: !Ref AWS::AccountId
-          - Name: AWS_DEFAULT_REGION
-            Value: !Ref AWS::Region
-          - Name: ENVIRONMENT_NAME
-            Value: !Ref EnvironmentName
-      Source:
-        Type: CODEPIPELINE
-      Cache:
-        Type: NO_CACHE
-
-  # CodePipeline Pipelines
-  FrontendCodePipeline:
+  # CodePipeline Pipeline
+  CodePipeline:
     Type: AWS::CodePipeline::Pipeline
     Properties:
-      Name: !Sub "${EnvironmentName}-frontend-pipeline"
+      Name: !Sub "${EnvironmentName}-pipeline"
       RoleArn: !GetAtt CodePipelineServiceRole.Arn
       ArtifactStore:
         Type: S3
@@ -661,7 +633,7 @@ Resources:
                 - Name: SourceOutput
               Configuration:
                 ConnectionArn: !Ref GitHubConnection
-                FullRepositoryId: !Sub "${GitHubRepositoryOwner}/${FrontendGitHubRepoName}"
+                FullRepositoryId: !Sub "${GitHubRepositoryOwner}/${GitHubRepositoryName}"
                 BranchName: master
                 DetectChanges: true
               RunOrder: 1
@@ -676,13 +648,13 @@ Resources:
               InputArtifacts:
                 - Name: SourceOutput
               Configuration:
-                ProjectName: !Ref FrontendCodeBuildProject
+                ProjectName: !Ref CodeBuildProject
               OutputArtifacts:
                 - Name: BuildOutput
               RunOrder: 1
         - Name: Deploy
           Actions:
-            - Name: DeployAction
+            - Name: DeployFrontend
               ActionTypeId:
                 Category: Deploy
                 Owner: AWS
@@ -695,50 +667,7 @@ Resources:
                 ServiceName: !Ref FrontendService
                 FileName: imagedefinitions.json
               RunOrder: 1
-
-  BackendCodePipeline:
-    Type: AWS::CodePipeline::Pipeline
-    Properties:
-      Name: !Sub "${EnvironmentName}-backend-pipeline"
-      RoleArn: !GetAtt CodePipelineServiceRole.Arn
-      ArtifactStore:
-        Type: S3
-        Location: !Ref CodePipelineArtifactStoreBucket
-      Stages:
-        - Name: Source
-          Actions:
-            - Name: SourceAction
-              ActionTypeId:
-                Category: Source
-                Owner: AWS
-                Provider: CodeStarSourceConnection
-                Version: '1'
-              OutputArtifacts:
-                - Name: SourceOutput
-              Configuration:
-                ConnectionArn: !Ref GitHubConnection
-                FullRepositoryId: !Sub "${GitHubRepositoryOwner}/${BackendGitHubRepoName}"
-                BranchName: master
-                DetectChanges: true
-              RunOrder: 1
-        - Name: Build
-          Actions:
-            - Name: BuildAction
-              ActionTypeId:
-                Category: Build
-                Owner: AWS
-                Provider: CodeBuild
-                Version: '1'
-              InputArtifacts:
-                - Name: SourceOutput
-              Configuration:
-                ProjectName: !Ref BackendCodeBuildProject
-              OutputArtifacts:
-                - Name: BuildOutput
-              RunOrder: 1
-        - Name: Deploy
-          Actions:
-            - Name: DeployAction
+            - Name: DeployBackend
               ActionTypeId:
                 Category: Deploy
                 Owner: AWS
@@ -750,7 +679,7 @@ Resources:
                 ClusterName: !Ref ECSCluster
                 ServiceName: !Ref BackendService
                 FileName: imagedefinitions.json
-              RunOrder: 1
+              RunOrder: 2
 
 Outputs:
   LoadBalancerDNSName:
