@@ -55,8 +55,8 @@ docker-compose down
    conn = psycopg2.connect(
        host="localhost",
        database="your_database",
-       user="your_user1",
-       password="your_password1"
+       user="your_user",
+       password="yourpassword1"
    )
    cursor = conn.cursor()
 
@@ -208,8 +208,8 @@ services:
     environment:
       - POSTGRES_HOST=postgres
       - POSTGRES_DB=your_database
-      - POSTGRES_USER=your_user1
-      - POSTGRES_PASSWORD=your_password1
+      - POSTGRES_USER=your_user
+      - POSTGRES_PASSWORD=yourpassword1
     depends_on:
       - postgres
 
@@ -217,8 +217,8 @@ services:
     image: postgres:13
     environment:
       POSTGRES_DB: your_database
-      POSTGRES_USER: your_user1
-      POSTGRES_PASSWORD: your_password1
+      POSTGRES_USER: your_user
+      POSTGRES_PASSWORD: yourpassword1
     ports:
       - "5432:5432"
 ```
