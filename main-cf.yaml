@@ -9,32 +9,26 @@ Parameters:
     Type: String
     Default: dev
     Description: "The environment name (e.g., dev, staging, prod)"
-
   VpcCIDR:
     Type: String
     Default: 10.0.0.0/16
     Description: "CIDR block for the VPC"
-
   PublicSubnet1CIDR:
     Type: String
     Default: 10.0.1.0/24
     Description: "CIDR block for public subnet 1"
-
   PublicSubnet2CIDR:
     Type: String
     Default: 10.0.2.0/24
     Description: "CIDR block for public subnet 2"
-
   PrivateSubnet1CIDR:
     Type: String
     Default: 10.0.3.0/24
     Description: "CIDR block for private subnet 1"
-
   PrivateSubnet2CIDR:
     Type: String
     Default: 10.0.4.0/24
     Description: "CIDR block for private subnet 2"
-
   DBUsername:
     Type: String
     Description: "Database admin username"
@@ -42,7 +36,6 @@ Parameters:
     MaxLength: 16
     AllowedPattern: '[a-zA-Z][a-zA-Z0-9]*'
     ConstraintDescription: "Must begin with a letter and contain only alphanumeric characters."
-
   DBPassword:
     Type: String
     Description: "Database admin password"
@@ -51,11 +44,9 @@ Parameters:
     MaxLength: 41
     AllowedPattern: '[a-zA-Z0-9]*'
     ConstraintDescription: "Must contain only alphanumeric characters."
-
   GitHubRepositoryOwner:
     Type: String
     Description: "GitHub username or organization owning the repository"
-
   GitHubRepositoryName:
     Type: String
     Description: "Name of the GitHub repository containing both frontend and backend"
@@ -337,7 +328,6 @@ Resources:
       ManagedPolicyArns:
         - arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryPowerUser
         - arn:aws:iam::aws:policy/CloudWatchLogsFullAccess
-        - arn:aws:iam::aws:policy/AWSCodeBuildAdminAccess
       Policies:
         - PolicyName: CodeBuildExtraPermissions
           PolicyDocument:
@@ -345,10 +335,18 @@ Resources:
             Statement:
               - Effect: Allow
                 Action:
-                  - ecs:RegisterTaskDefinition
-                  - ecs:UpdateService
-                  - ecs:DeregisterTaskDefinition
+                  - sts:GetCallerIdentity
                 Resource: "*"
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:GetObjectVersion
+                  - s3:PutObject
+                  - s3:PutObjectAcl
+                  - s3:GetBucketAcl
+                Resource:
+                  - !Sub "arn:aws:s3:::${CodePipelineArtifactStoreBucket}"
+                  - !Sub "arn:aws:s3:::${CodePipelineArtifactStoreBucket}/*"
 
   CodePipelineServiceRole:
     Type: AWS::IAM::Role
@@ -361,8 +359,63 @@ Resources:
               Service: codepipeline.amazonaws.com
             Action: sts:AssumeRole
       Path: "/"
+      Policies:
+        - PolicyName: CodePipelinePermissions
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              # Permissions to interact with CodeBuild
+              - Effect: Allow
+                Action:
+                  - codebuild:StartBuild
+                  - codebuild:BatchGetBuilds
+                  - codebuild:BatchGetProjects
+                  - codebuild:ListBuildsForProject
+                Resource:
+                  - !Sub "arn:aws:codebuild:${AWS::Region}:${AWS::AccountId}:project/${EnvironmentName}-build-project"
+              # Permission to pass the CodeBuild service role
+              - Effect: Allow
+                Action:
+                  - iam:PassRole
+                Resource: !GetAtt CodeBuildServiceRole.Arn
+              # Permissions for S3 artifact bucket
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:GetObjectVersion
+                  - s3:PutObject
+                  - s3:GetBucketVersioning
+                Resource:
+                  - !Sub "arn:aws:s3:::${CodePipelineArtifactStoreBucket}"
+                  - !Sub "arn:aws:s3:::${CodePipelineArtifactStoreBucket}/*"
+              # Permission to access Secrets Manager
+              - Effect: Allow
+                Action:
+                  - secretsmanager:GetSecretValue
+                Resource: !Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:github/personal-access-token*"
       ManagedPolicyArns:
-        - arn:aws:iam::aws:policy/AWSCodePipelineFullAccess
+        - arn:aws:iam::aws:policy/AWSCodePipeline_FullAccess
+
+  CodePipelineArtifactStoreBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref CodePipelineArtifactStoreBucket
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: AllowCodePipelineAccess
+            Effect: Allow
+            Principal:
+              AWS: !GetAtt CodePipelineServiceRole.Arn
+            Action:
+              - s3:GetObject
+              - s3:GetObjectVersion
+              - s3:PutObject
+              - s3:PutObjectAcl
+              - s3:GetBucketVersioning
+            Resource:
+              - !Sub "arn:aws:s3:::${CodePipelineArtifactStoreBucket}"
+              - !Sub "arn:aws:s3:::${CodePipelineArtifactStoreBucket}/*"
 
   # ECR Repositories
   FrontendECRRepository:
@@ -501,7 +554,7 @@ Resources:
       ServiceName: !Sub "${EnvironmentName}-frontend-service"
       TaskDefinition: !Ref FrontendTaskDefinition
       LaunchType: FARGATE
-      DesiredCount: 2
+      DesiredCount: 0  # Set to 0 initially
       NetworkConfiguration:
         AwsvpcConfiguration:
           AssignPublicIp: DISABLED
@@ -522,7 +575,7 @@ Resources:
       ServiceName: !Sub "${EnvironmentName}-backend-service"
       TaskDefinition: !Ref BackendTaskDefinition
       LaunchType: FARGATE
-      DesiredCount: 2
+      DesiredCount: 0  # Set to 0 initially
       NetworkConfiguration:
         AwsvpcConfiguration:
           AssignPublicIp: DISABLED
@@ -579,13 +632,6 @@ Resources:
       LogGroupName: !Sub "/ecs/${EnvironmentName}-backend"
       RetentionInDays: 7
 
-  # AWS CodeStar Connections
-  GitHubConnection:
-    Type: AWS::CodeStarConnections::Connection
-    Properties:
-      ConnectionName: !Sub "${EnvironmentName}-github-connection"
-      ProviderType: GitHub
-
   # CodeBuild Project
   CodeBuildProject:
     Type: AWS::CodeBuild::Project
@@ -600,16 +646,12 @@ Resources:
         Image: aws/codebuild/standard:5.0
         PrivilegedMode: true  # Required for Docker build
         EnvironmentVariables:
-          - Name: AWS_ACCOUNT_ID
-            Value: !Ref AWS::AccountId
           - Name: AWS_DEFAULT_REGION
             Value: !Ref AWS::Region
           - Name: ENVIRONMENT_NAME
             Value: !Ref EnvironmentName
       Source:
         Type: CODEPIPELINE
-      Cache:
-        Type: NO_CACHE
 
   # CodePipeline Pipeline
   CodePipeline:
@@ -626,16 +668,16 @@ Resources:
             - Name: SourceAction
               ActionTypeId:
                 Category: Source
-                Owner: AWS
-                Provider: CodeStarSourceConnection
+                Owner: ThirdParty
+                Provider: GitHub
                 Version: '1'
               OutputArtifacts:
                 - Name: SourceOutput
               Configuration:
-                ConnectionArn: !Ref GitHubConnection
-                FullRepositoryId: !Sub "${GitHubRepositoryOwner}/${GitHubRepositoryName}"
-                BranchName: master
-                DetectChanges: true
+                Owner: !Ref GitHubRepositoryOwner
+                Repo: !Ref GitHubRepositoryName
+                Branch: main
+                OAuthToken: !Sub "{{resolve:secretsmanager:github/personal-access-token:SecretString:github-token}}"
               RunOrder: 1
         - Name: Build
           Actions:
@@ -652,34 +694,6 @@ Resources:
               OutputArtifacts:
                 - Name: BuildOutput
               RunOrder: 1
-        - Name: Deploy
-          Actions:
-            - Name: DeployFrontend
-              ActionTypeId:
-                Category: Deploy
-                Owner: AWS
-                Provider: ECS
-                Version: '1'
-              InputArtifacts:
-                - Name: BuildOutput
-              Configuration:
-                ClusterName: !Ref ECSCluster
-                ServiceName: !Ref FrontendService
-                FileName: imagedefinitions.json
-              RunOrder: 1
-            - Name: DeployBackend
-              ActionTypeId:
-                Category: Deploy
-                Owner: AWS
-                Provider: ECS
-                Version: '1'
-              InputArtifacts:
-                - Name: BuildOutput
-              Configuration:
-                ClusterName: !Ref ECSCluster
-                ServiceName: !Ref BackendService
-                FileName: imagedefinitions.json
-              RunOrder: 2
 
 Outputs:
   LoadBalancerDNSName:
