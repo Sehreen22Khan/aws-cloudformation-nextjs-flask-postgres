@@ -556,7 +556,7 @@ Resources:
       ServiceName: !Sub "${EnvironmentName}-frontend-service"
       TaskDefinition: !Ref FrontendTaskDefinition
       LaunchType: FARGATE
-      DesiredCount: 0  # Set to 0 initially
+      DesiredCount: 2  # Set to 0 initially
       NetworkConfiguration:
         AwsvpcConfiguration:
           AssignPublicIp: DISABLED
@@ -577,7 +577,7 @@ Resources:
       ServiceName: !Sub "${EnvironmentName}-backend-service"
       TaskDefinition: !Ref BackendTaskDefinition
       LaunchType: FARGATE
-      DesiredCount: 0  # Set to 0 initially
+      DesiredCount: 2  # Set to 0 initially
       NetworkConfiguration:
         AwsvpcConfiguration:
           AssignPublicIp: DISABLED

@@ -30,9 +30,6 @@ phases:
       - |
         printf '[{"name":"frontend","imageUri":"%s.dkr.ecr.%s.amazonaws.com/%s-frontend-repo:latest"},{"name":"backend","imageUri":"%s.dkr.ecr.%s.amazonaws.com/%s-backend-repo:latest"}]' \
         $AWS_ACCOUNT_ID $AWS_DEFAULT_REGION $ENVIRONMENT_NAME $AWS_ACCOUNT_ID $AWS_DEFAULT_REGION $ENVIRONMENT_NAME > imagedefinitions.json
-      - echo Updating ECS services desired count...
-      - aws ecs update-service --cluster $ENVIRONMENT_NAME-ecs-cluster --service $ENVIRONMENT_NAME-frontend-service --desired-count 2
-      - aws ecs update-service --cluster $ENVIRONMENT_NAME-ecs-cluster --service $ENVIRONMENT_NAME-backend-service --desired-count 2
 artifacts:
   files:
     - imagedefinitions.json
