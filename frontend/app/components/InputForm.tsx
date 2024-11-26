@@ -13,7 +13,8 @@ export default function InputForm({ onAddName }: Props) {
   const handleSubmit = () => {
     if (!name.trim()) return;
 
-    axios.post('http://localhost:5000/api/data', { name })
+    // axios.post('http://localhost:5000/api/data', { name })
+    axios.post('/api/data', { name })
       .then(() => {
         onAddName(name);
         setName('');

@@ -9,7 +9,8 @@ export default function HomePage() {
   const [data, setData] = useState<{ id: number; name: string }[]>([]);
 
   useEffect(() => {
-    axios.get('http://localhost:5000/api/data')
+    // axios.get('http://localhost:5000/api/data')
+    axios.get('/api/data')
       .then(response => {
         setData(response.data);
       })
