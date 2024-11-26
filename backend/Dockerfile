@@ -1,5 +1,5 @@
 # backend/Dockerfile
-FROM python:3.9
+FROM public.ecr.aws/some-repo/python:3.9-slim
 
 # Set working directory
 WORKDIR /app
