@@ -3,6 +3,7 @@ import time
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 import psycopg2
+from psycopg2 import sql
 
 app = Flask(__name__)
 CORS(app)
@@ -22,6 +23,7 @@ for i in range(10):
             user=DATABASE_USER,
             password=DATABASE_PASSWORD
         )
+        conn.autocommit = True
         cursor = conn.cursor()
         break
     except psycopg2.OperationalError as e:
@@ -29,6 +31,18 @@ for i in range(10):
         time.sleep(5)
 else:
     raise Exception("Failed to connect to the database after multiple attempts.")
+
+# Initialize the database schema
+def initialize_database():
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS your_table (
+            id SERIAL PRIMARY KEY,
+            name VARCHAR(100)
+        );
+    """)
+    conn.commit()
+
+initialize_database()
 
 @app.route('/api/data', methods=['GET'])
 def get_data():
