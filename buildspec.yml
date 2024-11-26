@@ -13,13 +13,11 @@ phases:
   build:
     commands:
       - echo Build started on `date`
-      - cd frontend
       - echo Building the frontend Docker image...
-      - docker build -t $ENVIRONMENT_NAME-frontend .
+      - docker build -t $ENVIRONMENT_NAME-frontend ./frontend
       - docker tag $ENVIRONMENT_NAME-frontend:latest $AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/$ENVIRONMENT_NAME-frontend-repo:latest
-      - cd ../backend
       - echo Building the backend Docker image...
-      - docker build -t $ENVIRONMENT_NAME-backend .
+      - docker build -t $ENVIRONMENT_NAME-backend ./backend
       - docker tag $ENVIRONMENT_NAME-backend:latest $AWS_ACCOUNT_ID.dkr.ecr.$AWS_DEFAULT_REGION.amazonaws.com/$ENVIRONMENT_NAME-backend-repo:latest
   post_build:
     commands:
