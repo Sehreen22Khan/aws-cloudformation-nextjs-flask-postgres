@@ -1,10 +1,5 @@
 version: 0.2
 
-env:
-  variables:
-    AWS_ACCOUNT_ID: "${AWS_ACCOUNT_ID}"
-    AWS_DEFAULT_REGION: "${AWS_DEFAULT_REGION}"
-    ENVIRONMENT_NAME: "${ENVIRONMENT_NAME}"
 phases:
   pre_build:
     commands:
