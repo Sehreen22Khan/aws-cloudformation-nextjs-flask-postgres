@@ -538,6 +538,8 @@ Resources:
               Value: !Ref DBUsername
             - Name: DATABASE_PASSWORD
               Value: !Ref DBPassword
+            - Name: DATABASE_NAME
+              Value: !Sub "${EnvironmentName}db"
           LogConfiguration:
             LogDriver: awslogs
             Options:

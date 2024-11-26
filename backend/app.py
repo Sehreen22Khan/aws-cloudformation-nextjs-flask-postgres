@@ -1,3 +1,4 @@
+import os
 import time
 from flask import Flask, request, jsonify
 from flask_cors import CORS
@@ -6,19 +7,25 @@ import psycopg2
 app = Flask(__name__)
 CORS(app)
 
+# Retrieve database connection parameters from environment variables
+DATABASE_HOST = os.environ.get('DATABASE_HOST')
+DATABASE_USER = os.environ.get('DATABASE_USER')
+DATABASE_PASSWORD = os.environ.get('DATABASE_PASSWORD')
+DATABASE_NAME = os.environ.get('DATABASE_NAME', 'devdb')  # Default to 'devdb' if not set
+
 # Retry logic to connect to PostgreSQL
 for i in range(10):
     try:
         conn = psycopg2.connect(
-            host="postgres",
-            database="your_database",
-            user="your_user",
-            password="yourpassword1"
+            host=DATABASE_HOST,
+            database=DATABASE_NAME,
+            user=DATABASE_USER,
+            password=DATABASE_PASSWORD
         )
         cursor = conn.cursor()
         break
-    except psycopg2.OperationalError:
-        print("Database connection failed, retrying in 5 seconds...")
+    except psycopg2.OperationalError as e:
+        print(f"Database connection failed: {e}, retrying in 5 seconds...")
         time.sleep(5)
 else:
     raise Exception("Failed to connect to the database after multiple attempts.")
