@@ -274,7 +274,7 @@ Resources:
         - IpProtocol: tcp
           FromPort: 5000
           ToPort: 5000
-          SourceSecurityGroupId: !Ref FrontendServiceSecurityGroup
+          SourceSecurityGroupId: !Ref LoadBalancerSecurityGroup
       Tags:
         - Key: Name
           Value: !Sub "${EnvironmentName}-backend-sg"
