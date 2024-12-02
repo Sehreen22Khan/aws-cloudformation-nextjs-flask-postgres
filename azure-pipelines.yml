@@ -1,0 +1,49 @@
+trigger:
+- main
+
+variables:
+  ACR_NAME: 'khanregistry' # Replace with your Azure Container Registry name
+  RESOURCE_GROUP: 'Sehreen-Gazala' # Replace with your resource group name
+  FRONTEND_IMAGE: 'frontend'
+  BACKEND_IMAGE: 'backend'
+  ENVIRONMENT_NAME: 'prod' # Replace with your environment name
+
+stages:
+- stage: Build
+  displayName: 'Build Docker Images'
+  jobs:
+  - job: BuildImages
+    displayName: 'Build and Tag Docker Images'
+    pool:
+      vmImage: 'ubuntu-latest'
+    steps:
+    - script: |
+        echo "Logging into Azure Container Registry..."
+        az acr login --name $(ACR_NAME)
+
+        echo "Building the frontend Docker image..."
+        docker build -t $(FRONTEND_IMAGE) ./frontend
+        echo "Tagging the frontend Docker image..."
+        docker tag $(FRONTEND_IMAGE):latest $(ACR_NAME).azurecr.io/$(ENVIRONMENT_NAME)-frontend:latest
+
+        echo "Building the backend Docker image..."
+        docker build -t $(BACKEND_IMAGE) ./backend
+        echo "Tagging the backend Docker image..."
+        docker tag $(BACKEND_IMAGE):latest $(ACR_NAME).azurecr.io/$(ENVIRONMENT_NAME)-backend:latest
+      displayName: 'Build and Tag Images'
+
+- stage: Push
+  displayName: 'Push Docker Images to ACR'
+  dependsOn: Build
+  jobs:
+  - job: PushImages
+    displayName: 'Push Docker Images'
+    pool:
+      vmImage: 'ubuntu-latest'
+    steps:
+    - script: |
+        echo "Pushing the frontend Docker image..."
+        docker push $(ACR_NAME).azurecr.io/$(ENVIRONMENT_NAME)-frontend:latest
+        echo "Pushing the backend Docker image..."
+        docker push $(ACR_NAME).azurecr.io/$(ENVIRONMENT_NAME)-backend:latest
+      displayName: 'Push Images to ACR'
